@@ -43,66 +43,97 @@ func (o *PackageVariantSet) GetSpec() *PackageVariantSetSpec {
 
 // PackageVariantSetSpec defines the desired state of PackageVariantSet
 type PackageVariantSetSpec struct {
-	Upstream *Upstream `json:"upstream,omitempty"`
-	Targets  []Target  `json:"targets,omitempty"`
-
-	AdoptionPolicy pkgvarapi.AdoptionPolicy `json:"adoptionPolicy,omitempty"`
-	DeletionPolicy pkgvarapi.DeletionPolicy `json:"deletionPolicy,omitempty"`
-
-	Labels      map[string]string `json:"labels,omitempty"`
-	Annotations map[string]string `json:"annotations,omitempty"`
-}
-
-type Upstream struct {
-	Package *Package `json:"package,omitempty"`
-
-	Revision string `json:"revision,omitempty"`
-
-	Tag string `json:"ref,omitempty"`
+	Upstream *pkgvarapi.Upstream `json:"upstream,omitempty"`
+	Targets  []Target            `json:"targets,omitempty"`
 }
 
 type Target struct {
-	// option 1: an explicit repo/package name pair
-	Package *Package `json:"package,omitempty"`
+	// Exactly one of Repositories, RepositorySeletor, and ObjectSelector must be
+	// populated
+	// option 1: an explicit repositories and package names
+	Repositories []RepositoryTarget `json:"repositories,omitempty"`
 
 	// option 2: a label selector against a set of repositories
-	Repositories *metav1.LabelSelector `json:"repositories,omitempty"`
+	RepositorySelector *RepositorySelectorTarget `json:"repositorySelector,omitempty"`
 
 	// option 3: a selector against a set of arbitrary objects
-	Objects *ObjectSelector `json:"objects,omitempty"`
+	ObjectSelector *ObjectSelectorTarget `json:"objectSelector,omitempty"`
 
-	// For options 2 and 3, PackageName specifies how to create the name of the
-	// package variant
-	PackageName *PackageName `json:"packageName,omitempty"`
+	// Template specifies how to generate a PackageVariant from a target
+	Template *PackageVariantTemplate `json:"template,omitempty"`
 }
 
-type Package struct {
-	Repo string `json:"repo,omitempty"`
-	Name string `json:"name,omitempty"`
+type RepositoryTarget struct {
+	Name         string   `json:"name"`
+	PackageNames []string `json:"packageNames,omitempty"`
+}
+
+type RepositorySelectorTarget struct {
+	metav1.LabelSelector `json:",inline"`
+	PackageNames         []string `json:"packageNames,omitempty"`
+}
+
+type ObjectSelectorTarget struct {
+	ObjectSelector `json:",inline"`
+	PackageNames   []string `json:"packageNames,omitempty"`
 }
 
 type ObjectSelector struct {
-	Selectors []Selector `json:"selectors,omitempty"`
-
-	RepoName *ValueOrFromField `json:"repoName,omitempty"`
-}
-
-type Selector struct {
 	// APIVersion of the target resources
 	APIVersion string `yaml:"apiVersion,omitempty" json:"apiVersion,omitempty"`
 	// Kind of the target resources
 	Kind string `yaml:"kind,omitempty" json:"kind,omitempty"`
 	// Name of the target resources
-	Name string `yaml:"name,omitempty" json:"name,omitempty"`
-	// Namespace of the target resources
-	Namespace string `yaml:"namespace,omitempty" json:"namespace,omitempty"`
+	Name *string `yaml:"name,omitempty" json:"name,omitempty"`
 	// Labels on the target resources
-	Labels *metav1.LabelSelector `yaml:"labelSelector,omitempty" json:"labelSelector,omitempty"`
-	// Annotations on the target resources
-	Annotations map[string]string `yaml:"annotations,omitempty" json:"annotations,omitempty"`
+	Labels *metav1.LabelSelector `yaml:",inline" json:",inline"`
 }
 
-func (s *Selector) ToKptfileSelector() kptfilev1.Selector {
+type PackageVariantTemplate struct {
+	Downstream      *pkgvarapi.Downstream `json:"downstream,omitempty"`
+	DownstreamExprs *DownstreamExprs      `json:"downstreamExprs,omitempty"`
+
+	AdoptionPolicy *pkgvarapi.AdoptionPolicy `json:"adoptionPolicy,omitempty"`
+	DeletionPolicy *pkgvarapi.DeletionPolicy `json:"deletionPolicy,omitempty"`
+
+	Labels     map[string]string `json:"labels,omitempty"`
+	LabelExprs []MapExpr         `json:"labelExprs,omitemtpy"`
+
+	Annotations     map[string]string `json:"annotations,omitempty"`
+	AnnotationExprs []MapExpr         `json:"annotationExprs,omitempty"`
+
+	PackageContext      map[string]string    `json:"packageContext,omitempty"`
+	PackageContextExprs *PackageContextExprs `json:"packageContextExprs,omitempty"`
+
+	Pipeline *kptfilev1.Pipeline `json:"pipeline,omitempty"`
+
+	Injectors     []pkgvarapi.InjectionSelector `json:"injectors,omitempty"`
+	InjectorExprs []InjectionSelectorExprs      `json:"injectorExprs,omitempty"`
+}
+
+type DownstreamExprs struct {
+	RepoExpr    *string `json:"repoExpr,omitempty"`
+	PackageExpr *string `json:"packageExpr,omitempty"`
+}
+
+type PackageContextExprs struct {
+	DataExprs      []MapExpr `json:"dataExprs,omitempty"`
+	RemoveKeyExprs []string  `json:"removeKeyExprs,omitempty"`
+}
+
+type InjectionSelectorExprs struct {
+	GroupExpr   *string `json:"groupExpr,omitempty"`
+	VersionExpr *string `json:"versionExpr,omitempty"`
+	KindExpr    *string `json:"kindExpr,omitempty"`
+	NameExpr    string  `json:"nameExpr"`
+}
+
+type MapExpr struct {
+	KeyExpr   *string `json:"keyExpr,omitempty"`
+	ValueExpr *string `json:"valueExpr,omitempty"`
+}
+
+func (s *ObjectSelector) ToKptfileSelector() kptfilev1.Selector {
 	var labels map[string]string
 	if s.Labels != nil {
 		labels = s.Labels.MatchLabels
@@ -115,19 +146,6 @@ func (s *Selector) ToKptfileSelector() kptfilev1.Selector {
 		Labels:      labels,
 		Annotations: s.Annotations,
 	}
-}
-
-type PackageName struct {
-	Name *ValueOrFromField `json:"baseName,omitempty"`
-
-	NameSuffix *ValueOrFromField `json:"nameSuffix,omitempty"`
-
-	NamePrefix *ValueOrFromField `json:"namePrefix,omitempty"`
-}
-
-type ValueOrFromField struct {
-	Value     string `json:"value,omitempty"`
-	FromField string `json:"fromField,omitempty"`
 }
 
 // PackageVariantSetStatus defines the observed state of PackageVariantSet
